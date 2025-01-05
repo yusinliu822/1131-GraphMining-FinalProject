@@ -5,6 +5,9 @@ data/facebook_combined.txt
 # cpp compiled files
 *.exe
 
+# environment
+.vscode/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
