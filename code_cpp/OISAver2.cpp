@@ -1,5 +1,3 @@
-// with lower bounds of betweenness, closeness, and degree 𝜔𝑏, 𝜔𝑐, 𝜔d
-
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -16,7 +14,9 @@ using namespace std;
 
 // Function to calculate the Local Clustering Coefficient (LCC) for a node
 double computeLCC(const unordered_map<int, unordered_set<int>>& graph, int node) {
+    cout << "Calculating LCC for node " << node << endl;
     if (graph.find(node) == graph.end()) {
+        cerr << "Error: Node " << node << " does not exist in the graph." << endl;
         return 0.0; // Avoid out_of_range error
     }
     const auto& neighbors = graph.at(node);
@@ -33,13 +33,15 @@ double computeLCC(const unordered_map<int, unordered_set<int>>& graph, int node)
     }
 
     int possibleEdges = degree * (degree - 1) / 2;
-    return static_cast<double>(actualEdges) / possibleEdges;
+    double result = static_cast<double>(actualEdges) / possibleEdges;
+    cout << "Node " << node << " LCC: " << result << endl;
+    return result;
 }
 
 // Function to calculate Betweenness Centrality (omega_b)
 double computeBetweenness(const unordered_map<int, unordered_set<int>>& graph, int node) {
+    cout << "Calculating Betweenness for node " << node << endl;
     unordered_map<int, double> betweenness;
-    int n = graph.size();
     double betweennessScore = 0.0;
 
     for (const auto& srcEntry : graph) {
@@ -89,12 +91,15 @@ double computeBetweenness(const unordered_map<int, unordered_set<int>>& graph, i
         }
     }
 
+    cout << "Node " << node << " Betweenness: " << betweennessScore << endl;
     return betweennessScore;
 }
 
 // Function to calculate Closeness Centrality (omega_c)
 double computeCloseness(const unordered_map<int, unordered_set<int>>& graph, int node) {
+    cout << "Calculating Closeness for node " << node << endl;
     if (graph.find(node) == graph.end()) {
+        cerr << "Error: Node " << node << " does not exist in the graph." << endl;
         return 0.0; // Avoid out_of_range error
     }
 
@@ -119,15 +124,21 @@ double computeCloseness(const unordered_map<int, unordered_set<int>>& graph, int
     }
 
     if (totalDistance == 0) return 0.0;
-    return static_cast<double>(dist.size() - 1) / totalDistance;
+    double result = static_cast<double>(dist.size() - 1) / totalDistance;
+    cout << "Node " << node << " Closeness: " << result << endl;
+    return result;
 }
 
 // Function to calculate Degree (omega_d)
 int computeDegree(const unordered_map<int, unordered_set<int>>& graph, int node) {
+    cout << "Calculating Degree for node " << node << endl;
     if (graph.find(node) == graph.end()) {
+        cerr << "Error: Node " << node << " does not exist in the graph." << endl;
         return 0; // Avoid out_of_range error
     }
-    return graph.at(node).size();
+    int result = graph.at(node).size();
+    cout << "Node " << node << " Degree: " << result << endl;
+    return result;
 }
 
 // Updated PONF function to use omega_b, omega_c, and omega_d
@@ -147,6 +158,13 @@ vector<pair<int, int>> ponf(unordered_map<int, unordered_set<int>>& graph, const
                 targetNode = node;
             }
         }
+
+        if (targetNode == -1) {
+            cerr << "Error: No valid target node found in iteration " << i + 1 << endl;
+            break;
+        }
+
+        cout << "Iteration " << i + 1 << ": Target Node = " << targetNode << ", Max LCC = " << maxLCC << endl;
 
         int bestNode = -1;
         double bestLCCReduction = 0.0;
@@ -171,6 +189,11 @@ vector<pair<int, int>> ponf(unordered_map<int, unordered_set<int>>& graph, const
             graph[targetNode].erase(candidate);
             graph[candidate].erase(targetNode);
 
+            cout << "Candidate: " << candidate << ", LCC Reduction: " << lccReduction
+                 << ", Betweenness: " << candidateBetweenness
+                 << ", Closeness: " << candidateCloseness
+                 << ", Degree: " << candidateDegree << endl;
+
             if (lccReduction > bestLCCReduction &&
                 candidateBetweenness >= omega_b &&
                 candidateCloseness >= omega_c &&
@@ -184,6 +207,9 @@ vector<pair<int, int>> ponf(unordered_map<int, unordered_set<int>>& graph, const
             graph[targetNode].insert(bestNode);
             graph[bestNode].insert(targetNode);
             interventionEdges.emplace_back(targetNode, bestNode);
+            cout << "Selected Edge: (" << targetNode << ", " << bestNode << ")" << endl;
+        } else {
+            cout << "No suitable candidate found in this iteration." << endl;
         }
     }
 
@@ -192,7 +218,7 @@ vector<pair<int, int>> ponf(unordered_map<int, unordered_set<int>>& graph, const
 
 // Function to read input from file
 void readInputFile(const string& filename, unordered_map<int, unordered_set<int>>& graph, vector<int>& targets,
-                   int& k, double& tau, double& omega_b, double& omega_c, int& omega_d) {
+                   int& k, double& tau, double& omega_b, double& omega_c, double& omega_d) {
     ifstream file(filename);
     if (!file) {
         cerr << "Error: Unable to open input file." << endl;
@@ -214,6 +240,7 @@ void readInputFile(const string& filename, unordered_map<int, unordered_set<int>
     for (int i = 0; i < m; ++i) {
         int u, v;
         file >> u >> v;
+        cout << "u: " << u << ", v: " << v << endl;
         graph[u].insert(v);
         graph[v].insert(u);
     }
@@ -235,14 +262,13 @@ void writeOutputFile(const string& filename, const vector<pair<int, int>>& inter
 }
 
 int main() {
-    string inputFile = "../data/example/in.txt";
-    string outputFile = "../data/example/output.txt";
+    string inputFile = "../data/test/3980.txt";
+    string outputFile = "../data/test/output.txt";
 
     unordered_map<int, unordered_set<int>> graph;
     vector<int> targets;
     int k;
-    double tau, omega_b, omega_c;
-    int omega_d;
+    double tau, omega_b, omega_c, omega_d;
 
     // Read input
     readInputFile(inputFile, graph, targets, k, tau, omega_b, omega_c, omega_d);

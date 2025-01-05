@@ -57,6 +57,8 @@ void readInputFile(const string& filename, unordered_map<int, unordered_set<int>
     for (int i = 0; i < m; ++i) {
         int u, v;
         file >> u >> v;
+        cout << "u: " << u << ", v: " << v << endl;
+
         graph[u].insert(v);
         graph[v].insert(u);
     }
@@ -129,8 +131,8 @@ void writeOutputFile(const string& filename, const vector<pair<int, int>>& inter
 }
 
 int main() {
-    string inputFile = "../data/example/in.txt";
-    string outputFile = "../data/example/output.txt";
+    string inputFile = "../data/test/3980.txt";
+    string outputFile = "../data/test/output_ver1.txt";
 
     unordered_map<int, unordered_set<int>> graph;
     vector<int> targets;
