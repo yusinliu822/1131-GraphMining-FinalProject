@@ -17,52 +17,75 @@ void calculateAdjList() {
     }
 }
 
-void calculateLCC() {
-    lcc.resize(N + 1);
-    for (int v = 1; v <= N; v++) {
-        int count = 0;  // count edges between nodes which are neighbors of v
-        for (auto u : adjList[v]) {
-            for (auto w : adjList[u]) {
-                if (find(adjList[v].begin(), adjList[v].end(), w) != adjList[v].end()) { // w is neighbor of v
-                    count++;
-                }
+double calculateLCCForNode(int v) {
+    int count = 0;  // count edges between nodes which are neighbors of v
+    int degree = adjList[v].size();
+    if (degree < 2) return 0.0; // LCC is not defined for nodes with degree less than 2
+    for (auto u : adjList[v]) {
+        for (auto w : adjList[u]) {
+            if (find(adjList[v].begin(), adjList[v].end(), w) != adjList[v].end()) { // w is neighbor of v
+                count++;
             }
         }
-        // printf("count of edges between neighbors of %d is %d\n", v, count);
-        lcc[v] = count; // an edge is counted twice
-        lcc[v] /= adjList[v].size() * (adjList[v].size() - 1);
+    }
+    // printf("count of edges between neighbors of %d is %d\n", v, count);
+    double lcc = count; // an edge is counted twice
+    lcc /= (degree * (degree - 1));
+    return lcc;
+}
+
+void calculateLCCForAllNodes() {
+    lcc.resize(N + 1);
+    for (int v = 1; v <= N; v++) {
+        lcc[v] = calculateLCCForNode(v);
     }
     return;
 }
 
-int main() {
-    cin >> N >> M;
-    cin >> T;
+void readInput(string fileName) {
+    ifstream file(fileName);
+
+    if (!file.is_open()) {
+        cout << "File not found!" << endl;
+        return;
+    }
+
+    file >> N >> M >> T;
     for (int i = 0; i < T; i++) {
         int targetNode;
-        cin >> targetNode;
+        file >> targetNode;
         targetNodes.push_back(targetNode);
     }
-    cin >> K;
-    cin >> TAU >> OMEGA_B >> OMEGA_C >> OMEGA_D;
+    file >> K;
+    file >> TAU >> OMEGA_B >> OMEGA_C >> OMEGA_D;
     for (int i = 0; i < M; i++) {
         int u, v;
-        cin >> u >> v;
+        file >> u >> v;
         edges.push_back({ u, v });
     }
-    printf("N = %d, M = %d, T = %d, K = %d, TAU = %f, OMEGA_B = %f, OMEGA_C = %f, OMEGA_D = %f\n", N, M, T, K, TAU, OMEGA_B, OMEGA_C, OMEGA_D);
-    calculateAdjList();
-    calculateLCC();
+}
 
-    // write lcc to file ../data/lcc.txt
-    ofstream lccFile;
-    lccFile.open("../data/lcc.txt");
+void writeLCC() {
+    string lccFileName = "../data/example/lcc.txt";
+    ofstream lccFile(lccFileName);
     for (int i = 1; i <= N; i++) {
         lccFile << lcc[i] << endl;
     }
     lccFile.close();
-    puts("lcc is written to file ../data/lcc.txt");
+    printf("LCC values are written to %s\n", lccFileName.c_str());
+}
 
+int main() {
+    string inputFileName = "../data/example/in.txt";
+    string outputFileName = "../data/example/out.txt";
+
+    readInput(inputFileName);
+    printf("N = %d, M = %d, T = %d, K = %d, TAU = %f, OMEGA_B = %f, OMEGA_C = %f, OMEGA_D = %f\n", N, M, T, K, TAU, OMEGA_B, OMEGA_C, OMEGA_D);
+
+    calculateAdjList();
+    calculateLCCForAllNodes();
+
+    writeLCC();
 
     return 0;
 }
