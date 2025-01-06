@@ -1,38 +1,97 @@
 #include <bits/stdc++.h>
 #define pii pair<int, int>
+#define ADJ_LIST unordered_map<int, unordered_set<int>>
 using namespace std;
 
-vector<vector<int>> calculateAdjList(vector<pair<int, int>>& edges, int N) {
-    vector<vector<int>> adjList(N + 1);
+ADJ_LIST calculateAdjList(vector<pair<int, int>>& edges, int N) {
+    ADJ_LIST adjList(N + 1);
     for (auto [u, v] : edges) {
-        adjList[u].push_back(v);
-        adjList[v].push_back(u);
+        adjList[u].insert(v);
+        adjList[v].insert(u);
     }
     return adjList;
 }
+void updateAdjList(ADJ_LIST& adjList, int u, int v) {
+    adjList[u].insert(v);
+    adjList[v].insert(u);
+}
 
-double calculateLCCForNode(int v, vector<vector<int>>& adjList) {
-    int count = 0;  // count edges between nodes which are neighbors of v
-    int degree = adjList[v].size();
-    if (degree < 2) return 0.0; // LCC is not defined for nodes with degree less than 2
-    for (auto u : adjList[v]) {
-        for (auto w : adjList[u]) {
-            if (find(adjList[v].begin(), adjList[v].end(), w) != adjList[v].end()) { // w is neighbor of v
+void restoreAdjList(ADJ_LIST& adjList, int u, int v) {
+    adjList[u].erase(v);
+    adjList[v].erase(u);
+}
+
+int countNeighborEdges(int v, ADJ_LIST& adjList) {
+    int count = 0;
+    auto neighbors = adjList[v];
+    for (auto u : neighbors) {
+        for (auto w : neighbors) {
+            if (u != w && adjList[u].find(w) != adjList[u].end()) { // u and w are neighbors
                 count++;
             }
         }
     }
-    // printf("count of edges between neighbors of %d is %d\n", v, count);
-    double lcc = (double)count / (degree * (degree - 1));
-    return lcc;
+    count /= 2; // each edge is counted twice
+    return count;
 }
 
-vector<double> calculateLCCForAllNodes(vector<vector<int>>& adjList, int N) {
+unordered_map<int, int> calculateNeighborEdgeCounts(ADJ_LIST& adjList, int N) {
+    unordered_map<int, int> neighborEdgeCounts;
+    for (int v = 1; v <= N; v++) {
+        neighborEdgeCounts[v] = countNeighborEdges(v, adjList);
+    }
+    return neighborEdgeCounts;
+}
+
+double calculateLCCForNode(int v, ADJ_LIST& adjList) {
+    int degree = adjList[v].size();
+    if (degree < 2) return 0.0; // LCC is not defined for nodes with degree less than 2
+    int neighborEdgeCount = countNeighborEdges(v, adjList);
+    return (double)neighborEdgeCount / (degree * (degree - 1) / 2);
+}
+
+vector<double> calculateLCCForAllNodes(ADJ_LIST& adjList, int N) {
     vector<double> lccList(N + 1);
     for (int v = 1; v <= N; v++) {
         lccList[v] = calculateLCCForNode(v, adjList);
     }
     return lccList;
+}
+
+void updateLCCForNode(int v, vector<double>& lccList, ADJ_LIST& adjList, unordered_map<int, int>& neighborEdgeCounts) {
+    int degree = adjList[v].size();
+    if (degree < 2) {
+        lccList[v] = 0.0;
+        return;
+    }
+    int neighborEdgeCount = neighborEdgeCounts[v];
+    lccList[v] = (double)neighborEdgeCount / (degree * (degree - 1) / 2);
+}
+
+void updateLCC(vector<double>& lccList, ADJ_LIST& adjList, unordered_map<int, int>& neighborEdgeCounts, int u, int v) {
+    lccList[u] = calculateLCCForNode(u, adjList);
+    lccList[v] = calculateLCCForNode(v, adjList);
+
+    // if both u and v are neighbors of w, then update LCC(w)
+    for (auto w : adjList[u]) {
+        if (w != v && adjList[v].find(w) != adjList[v].end()) {
+            neighborEdgeCounts[w]++;
+            updateLCCForNode(w, lccList, adjList, neighborEdgeCounts);
+        }
+    }
+}
+
+void restoreLCC(vector<double>& lccList, ADJ_LIST& adjList, unordered_map<int, int>& neighborEdgeCounts, int u, int v) {
+    lccList[u] = calculateLCCForNode(u, adjList);
+    lccList[v] = calculateLCCForNode(v, adjList);
+
+    // if both u and v are neighbors of w, then update LCC(w)
+    for (auto w : adjList[u]) {
+        if (w != v && adjList[v].find(w) != adjList[v].end()) {
+            neighborEdgeCounts[w]--;
+            updateLCCForNode(w, lccList, adjList, neighborEdgeCounts);
+        }
+    }
 }
 
 double getMaxLCC(vector<double>& lccList, vector<int>& targetNodes) {
@@ -68,24 +127,17 @@ vector<vector<T>> combinations(vector<T> elements, int k) {
 
 vector<pii> getCandidateEdges(vector<pii>& edges, int N) {
     vector<pii> candidateEdges;
-    vector<int> nodes;
-    for (int i = 1; i <= N; i++) {
-        nodes.push_back(i);
-    }
-    vector<vector<int>> allEdgesVec = combinations(nodes, 2);
-    vector<pii> allEdges;
-    for (auto edge : allEdgesVec) {
-        allEdges.push_back({ edge[0], edge[1] });
-    }
-    for (auto edge : allEdges) {
-        if (find(edges.begin(), edges.end(), edge) == edges.end()) {
-            candidateEdges.push_back(edge);
+    for (int u = 1; u <= N; u++) {
+        for (int v = u + 1; v <= N; v++) {
+            if (find(edges.begin(), edges.end(), make_pair(u, v)) == edges.end()) {
+                candidateEdges.push_back({ u, v });
+            }
         }
     }
     return candidateEdges;
 }
 
-pair<vector<pii>, double> enumeration(vector<pii>& edges, vector<double>& lccList, vector<int>& targetNodes, int N, int K) {
+pair<vector<pii>, double> enumeration(vector<pii>& edges, ADJ_LIST& adjList, unordered_map<int, int>& neighborEdgeCounts, vector<double>& lccList, vector<int>& targetNodes, int N, int K) {
     vector<pii> candidateEdges = getCandidateEdges(edges, N);
 
     // choose K edges from candidateEdges
@@ -93,18 +145,20 @@ pair<vector<pii>, double> enumeration(vector<pii>& edges, vector<double>& lccLis
     double maxLCC = getMaxLCC(lccList, targetNodes);
     vector<pii> interventionEdges;
     for (auto edgeCombination : edgeCombinations) {
-        puts("New combination");
-        vector<pair<int, int>> newEdges = edges;
+
         for (auto edge : edgeCombination) {
-            newEdges.push_back(edge);
-            // printf("edge (%d, %d) is added\n", edge.first, edge.second);
+            updateAdjList(adjList, edge.first, edge.second);
+            updateLCC(lccList, adjList, neighborEdgeCounts, edge.first, edge.second);
         }
-        vector<vector<int>> newAdjList = calculateAdjList(newEdges, N);
-        vector<double> newLCCList = calculateLCCForAllNodes(newAdjList, newAdjList.size() - 1);
-        double localMaxLCC = getMaxLCC(newLCCList, targetNodes);
+        double localMaxLCC = getMaxLCC(lccList, targetNodes);
         if (localMaxLCC < maxLCC) {
             maxLCC = localMaxLCC;
             interventionEdges = edgeCombination;
+        }
+
+        for (auto edge : edgeCombination) {
+            restoreAdjList(adjList, edge.first, edge.second);
+            restoreLCC(lccList, adjList, neighborEdgeCounts, edge.first, edge.second);
         }
     }
     return { interventionEdges, maxLCC };
@@ -134,7 +188,7 @@ void readInput(string fileName, int& N, int& M, int& T, vector<int>& targetNodes
 }
 
 void writeLCC(vector<double>& lcc) {
-    string lccFileName = "../data/example/lcc.txt";
+    string lccFileName = "../data/test/lcc.txt";
     ofstream lccFile(lccFileName);
     for (int i = 1; i <= lcc.size(); i++) {
         lccFile << lcc[i] << endl;
@@ -151,11 +205,14 @@ void writeOutput(string fileName, vector<pii> interventionEdges, double maxLCC) 
     }
     file << maxLCC << endl;
     file.close();
+    printf("Output is written to %s\n", fileName.c_str());
 }
 
 int main() {
-    string inputFileName = "../data/example/in.txt";
-    string outputFileName = "../data/example/out.txt";
+    // string inputFileName = "../data/example/in.txt";
+    // string outputFileName = "../data/example/out.txt";
+    string inputFileName = "../data/test/3980_small.txt";
+    string outputFileName = "../data/test/3980_small_out.txt";
 
 
     int N, M, T, K;
@@ -167,11 +224,21 @@ int main() {
     printf("N = %d, M = %d, T = %d, K = %d, TAU = %f, OMEGA_B = %f, OMEGA_C = %f, OMEGA_D = %f\n", N, M, T, K, TAU, OMEGA_B, OMEGA_C, OMEGA_D);
 
 
-    vector<vector<int>> adjList = calculateAdjList(edges, N);
+    ADJ_LIST adjList = calculateAdjList(edges, N);
+    unordered_map<int, int> neighborEdgeCounts = calculateNeighborEdgeCounts(adjList, N);
     vector<double> lccList = calculateLCCForAllNodes(adjList, N);
 
     writeLCC(lccList);
-    auto [interventionEdges, maxLCC] = enumeration(edges, lccList, targetNodes, N, K);
+
+    // time start
+    auto start = chrono::high_resolution_clock::now();
+    auto [interventionEdges, maxLCC] = enumeration(edges, adjList, neighborEdgeCounts, lccList, targetNodes, N, K);
+    // time end
+    auto end = chrono::high_resolution_clock::now();
+    chrono::duration<double> elapsed = end - start;
+    printf("Elapsed time: %f seconds\n", elapsed.count());
+
+
     writeOutput(outputFileName, interventionEdges, maxLCC);
 
     return 0;
