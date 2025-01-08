@@ -4,9 +4,10 @@
 #define unmapii unordered_map<int, int>
 #define unmapid unordered_map<int, double>
 #define ADJ_LIST unordered_map<int, unordered_set<int>>
+#define ADJ_MATRIX unordered_map<int, unordered_map<int, int>>
 using namespace std;
 
-string USING_ALGORITHM = "ENUM";
+string USING_ALGORITHM = "OISA"; // ENUM or OISA
 class InterventionTarget {
 public:
     vi targetNodes;
@@ -34,6 +35,10 @@ public:
     unmapii neighbor_edge_counts; // number of edges between neighbors for each node
     unmapid lcc_list; // local clustering coefficient for each node
     vector<pii> candidate_edges;
+    ADJ_MATRIX shortest_path_matrix;    // length of shortest path between nodes
+
+    unmapid betweenness_score;
+    unmapid closeness_score;
 
     Graph(vector<pii> edges, int num_nodes) {
         for (auto& [u, v] : edges) {
@@ -95,6 +100,48 @@ public:
         }
     }
 
+    int get_hop_distance(int u, int v) {
+        if (shortest_path_matrix[u].find(v) == shortest_path_matrix[u].end()) {
+            return -1;
+        }
+        return shortest_path_matrix[u][v];
+    }
+
+    vi get_candidate_nodes(int v) {
+        vi candidate_nodes;
+        for (auto& [u, _] : adj_list) {
+            if (u != v && adj_list[v].find(u) == adj_list[v].end()) {
+                candidate_nodes.emplace_back(u);
+            }
+        }
+        return candidate_nodes;
+    }
+
+    double get_betweenness_score(int v) {
+        cal_betweenness_score();
+        return betweenness_score[v];
+    }
+
+    double get_closeness_score(int v) {
+        cal_closeness_score(v);
+        return closeness_score[v];
+    }
+
+    int get_degree(int v) {
+        return adj_list[v].size();
+    }
+
+    double get_lcc(int v) {
+        return lcc_list[v];
+    }
+
+    double get_lcc_reduction(int target_node, int candidate_node) {
+        double lcc_before = get_lcc(target_node);
+        add_edge(target_node, candidate_node);
+        double lcc_after = get_lcc(target_node);
+        remove_edge(target_node, candidate_node);
+        return lcc_before - lcc_after;
+    }
 
 private:
     int count_neighbor_edges(int v) {
@@ -137,7 +184,151 @@ private:
         }
         return;
     }
+
+    void cal_betweenness_score() {
+        // use Brandes' algorithm to calculate betweenness score
+        // complexity: O(V * (V + E))
+
+        for (auto& [u, _] : adj_list) {
+            betweenness_score[u] = 0.0;
+        }
+
+        for (auto& [s, _] : adj_list) {
+            stack<int> S;
+            unordered_map<int, vector<int>> prev;   // predecessors
+            unordered_map<int, int> sigma;          // number of shortest paths 
+            unordered_map<int, int>& dist = shortest_path_matrix[s];    // distance from s
+            unordered_map<int, double> delta;       // dependency of s on v
+
+            for (auto& [v, _] : adj_list) {
+                prev[v] = {};
+                sigma[v] = 0;
+                dist[v] = -1;
+                delta[v] = 0.0;
+            }
+
+            sigma[s] = 1;
+            dist[s] = 0;
+
+            queue<int> Q;
+            Q.push(s);
+
+            // single source shortest path
+            while (!Q.empty()) {
+                int u = Q.front();
+                Q.pop();
+                S.push(u);
+
+                for (auto& v : adj_list[u]) {
+                    if (dist[v] < 0) {
+                        Q.push(v);
+                        dist[v] = dist[u] + 1;
+                    }
+
+                    if (dist[v] == dist[u] + 1) {
+                        sigma[v] += sigma[u];
+                        prev[v].push_back(u);
+                    }
+                }
+            }
+
+            // back propagation of dependencies
+            while (!S.empty()) {
+                int v = S.top();
+                S.pop();
+
+                for (auto& u : prev[v]) {
+                    delta[u] += (sigma[u] / sigma[v]) * (1 + delta[v]);
+
+                    if (u != s) {
+                        betweenness_score[u] += delta[u];
+                    }
+                }
+            }
+        }
+
+        for (auto& [u, _] : adj_list) {
+            betweenness_score[u] /= 2;  // divide by 2 because each shortest path is counted twice
+        }
+
+        return;
+    }
+
+    void cal_closeness_score(int s) {
+        int total_distance = 0;
+        for (auto& [_, dist] : shortest_path_matrix)  total_distance += dist[s];
+        if (total_distance == 0) {
+            closeness_score[s] = 0.0;
+            return;
+        }
+        closeness_score[s] = (double)(adj_list.size() - 1) / total_distance;
+        return;
+    }
+
 };
+
+class Score {
+public:
+    double betweenness;
+    double closeness;
+    double degree;
+
+    Score(Graph graph, InterventionTarget target, int node) {
+        betweenness = graph.get_betweenness_score(node);
+        closeness = graph.get_closeness_score(node);
+        degree = graph.get_degree(node);
+        set_weights(target.OMEGA_B, target.OMEGA_C);
+    }
+
+    double get_score() {
+        return w_b * betweenness + w_c * closeness + w_d * degree;
+    }
+
+private:
+    double w_b, w_c, w_d;
+
+    void set_weights(double omega_b, double omega_c) {
+        w_b = (omega_b - betweenness) / (omega_b + omega_c);
+        w_c = (omega_c - closeness) / (omega_b + omega_c);
+        w_d = 1 - w_b - w_c;
+    }
+};
+
+struct Node {
+    int node = -1;
+    double lcc_reduction = 0.0;
+    int optionality = INT_MAX;
+    double miss_score = -1.0;
+
+    Node() {}
+
+    Node(int node, double lcc_reduction, int optionality, double miss_score) {
+        this->node = node;
+        this->lcc_reduction = lcc_reduction;
+        this->optionality = optionality;
+        this->miss_score = miss_score;
+    }
+
+    // the smaller the better
+    bool operator<(const Node& other) const {
+        if (lcc_reduction != other.lcc_reduction) {
+            return lcc_reduction > other.lcc_reduction;
+        }
+        if (optionality != other.optionality) {
+            return optionality < other.optionality;
+        }
+        return miss_score > other.miss_score;
+    }
+};
+
+bool check_lcc_less_than_tau(const Graph& graph, const InterventionTarget& target) {
+    for (const auto& [node, lcc] : graph.lcc_list) {
+        if (lcc > target.TAU) {
+            return false;
+        }
+    }
+    return true;
+}
 
 double get_max_lcc_of_targets(const Graph& graph, const InterventionTarget& target) {
     double max_lcc = 0.0; // Initialize maximum LCC value to 0
@@ -145,6 +336,40 @@ double get_max_lcc_of_targets(const Graph& graph, const InterventionTarget& targ
         max_lcc = max(max_lcc, graph.lcc_list.at(node));
     }
     return max_lcc;
+}
+
+pair<int, double> get_target_with_max_lcc(const Graph& graph, const InterventionTarget& target) {
+    int target_node = -1;
+    double max_lcc = 0.0;
+    for (const auto& node : target.targetNodes) {
+        if (graph.lcc_list.at(node) > max_lcc) {
+            max_lcc = graph.lcc_list.at(node);
+            target_node = node;
+        }
+    }
+    return { target_node, max_lcc };
+}
+
+int cal_optionality(Graph& graph, const InterventionTarget& target, int node) {
+    /*
+        Definition 4. Optionality.
+        For a target t, the optionality of t denotes the number of nodes in the option set U_t ⊆ T such that for every u_t ∈ U_t, either
+        1) the hop number from ut to t is no smaller than 3, or
+        2) ut is two-hop away from t and adding an edge (t,u_t) does not increase the LCC of any common neighbor by more than τ.
+    */
+    int optionality = 0;
+    for (const auto& neighbor : graph.adj_list.at(node)) {
+        int hop_distance = graph.get_hop_distance(node, neighbor);
+        if (hop_distance > 2) {
+            optionality++;
+        }
+        else if (hop_distance == 2) {
+            graph.add_edge(node, neighbor);
+            optionality += check_lcc_less_than_tau(graph, target) ? 1 : 0;
+            graph.remove_edge(node, neighbor);
+        }
+    }
+    return optionality;
 }
 
 // input: an vector of n elements, k elements to choose
@@ -193,6 +418,44 @@ pair<vector<pii>, double> enumeration(const Graph& graph, const InterventionTarg
             newGraph.remove_edge(edge.first, edge.second);
         }
     }
+    return { interventionEdges, maxLCC };
+}
+
+pair<vector<pii>, double> OISA(Graph& graph, const InterventionTarget& target) {
+    vector<pii> interventionEdges;
+    double maxLCC = get_max_lcc_of_targets(graph, target);
+
+    for (int k = 0; k < target.K; k++) {
+        // Step 2: Find the target node with the highest LCC
+        auto [targetNode, maxLCC] = get_target_with_max_lcc(graph, target);
+        if (targetNode == -1) break;
+
+        // Step 3: Find the best candidate node to connect to the target node
+        Node bestNode;
+        Node candidateNode;
+
+        vi candidate_nodes = graph.get_candidate_nodes(targetNode);
+        for (auto& candidate : candidate_nodes) {
+
+            int optionality = cal_optionality(graph, target, candidate);
+            double miss_score = Score(graph, target, candidate).get_score();
+            double lcc_reduction = graph.get_lcc_reduction(targetNode, candidate);
+
+            candidateNode = Node(candidate, lcc_reduction, optionality, miss_score);
+
+            if (candidateNode < bestNode) {
+                bestNode = candidateNode;
+            }
+        }
+
+        if (bestNode.node != -1) {
+            graph.add_edge(targetNode, bestNode.node);
+            interventionEdges.emplace_back(targetNode, bestNode.node);
+        }
+    }
+
+    maxLCC = get_max_lcc_of_targets(graph, target);
+
     return { interventionEdges, maxLCC };
 }
 
@@ -254,14 +517,20 @@ int main() {
 
     // time start
     auto start = chrono::high_resolution_clock::now();
-    auto [interventionEdges, maxLCC] = enumeration(graph, target);
+    pair<vector<pii>, double> result;
+    if (USING_ALGORITHM == "ENUM") {
+        result = enumeration(graph, target);
+    }
+    else {
+        result = OISA(graph, target);
+    }
     // time end
     auto end = chrono::high_resolution_clock::now();
     chrono::duration<double> elapsed = end - start;
     printf("Elapsed time: %f seconds\n", elapsed.count());
 
 
-    writeOutput(outputFileName, interventionEdges, maxLCC);
+    writeOutput(outputFileName, result.first, result.second);
 
     return 0;
 }
