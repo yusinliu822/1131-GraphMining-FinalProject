@@ -95,7 +95,6 @@ int calculateOptionality(const unordered_map<int, unordered_set<int>>& graph, in
 
 // Function to calculate Betweenness Centrality (omega_b)
 double computeBetweenness(const unordered_map<int, unordered_set<int>>& graph, int node) {
-    cout << "Calculating Betweenness for node " << node << endl;
     unordered_map<int, double> betweenness;
     double betweennessScore = 0.0;
 
@@ -145,16 +144,12 @@ double computeBetweenness(const unordered_map<int, unordered_set<int>>& graph, i
             }
         }
     }
-
-    cout << "Node " << node << " Betweenness: " << betweennessScore << endl;
     return betweennessScore;
 }
 
 // Function to calculate Closeness Centrality (omega_c)
 double computeCloseness(const unordered_map<int, unordered_set<int>>& graph, int node) {
-    cout << "Calculating Closeness for node " << node << endl;
     if (graph.find(node) == graph.end()) {
-        cerr << "Error: Node " << node << " does not exist in the graph." << endl;
         return 0.0; // Avoid out_of_range error
     }
 
@@ -180,19 +175,15 @@ double computeCloseness(const unordered_map<int, unordered_set<int>>& graph, int
 
     if (totalDistance == 0) return 0.0;
     double result = static_cast<double>(dist.size() - 1) / totalDistance;
-    cout << "Node " << node << " Closeness: " << result << endl;
     return result;
 }
 
 // Function to calculate Degree (omega_d)
 int computeDegree(const unordered_map<int, unordered_set<int>>& graph, int node) {
-    cout << "Calculating Degree for node " << node << endl;
     if (graph.find(node) == graph.end()) {
-        cerr << "Error: Node " << node << " does not exist in the graph." << endl;
         return 0; // Avoid out_of_range error
     }
     int result = graph.at(node).size();
-    cout << "Node " << node << " Degree: " << result << endl;
     return result;
 }
 
@@ -213,29 +204,22 @@ vector<pair<int, int>> oisaAlgorithm(unordered_map<int, unordered_set<int>>& gra
     }
 
     for (int i = 0; i < k; i++) {
-        cout << "Iteration " << i + 1 << ":\n";
-
         int targetNode = -1;
         double maxLCC = -1.0;
 
         // Step 2: Find the target node with the highest LCC
-        cout << "Finding Target Node...\n";
         for (int node : targets) {
             if (graph.find(node) == graph.end()) continue;
             double lcc = computeLCC(graph, node);
-            cout << "Node " << node << " LCC: " << lcc << endl;
             if (lcc > maxLCC) {
                 maxLCC = lcc;
                 targetNode = node;
             }
         }
 
-        if (targetNode == -1) {
-            cout << "No valid target node found. Ending algorithm.\n";
-            break;
-        }
+        if (targetNode == -1) break;
 
-        cout << "Target Node: " << targetNode << ", Max LCC: " << maxLCC << endl;
+
 
         // Step 3: Find the best candidate node to connect to the target node
         int bestNode = -1;
@@ -243,17 +227,13 @@ vector<pair<int, int>> oisaAlgorithm(unordered_map<int, unordered_set<int>>& gra
         int bestOptionality = INT_MAX;
         double bestMissScore = -1.0;
 
-        cout << "Evaluating Candidate Nodes...\n";
         for (const auto& entry : graph) {
             int candidate = entry.first;
-            cout << "candidate: " << candidate << endl;
             if (candidate == targetNode || graph[targetNode].count(candidate)) continue;
 
             // Skip if LCC upper bound indicates no significant reduction
-            if (lccUpperBounds[candidate] > tau) {
-                cout << "lccUpperBounds > tau" << endl;   
-                continue;
-            }
+            if (lccUpperBounds[candidate] > tau) continue;
+            
             // Temporarily add the edge
             graph[targetNode].insert(candidate);
             graph[candidate].insert(targetNode);
@@ -275,12 +255,7 @@ vector<pair<int, int>> oisaAlgorithm(unordered_map<int, unordered_set<int>>& gra
             graph[targetNode].erase(candidate);
             graph[candidate].erase(targetNode);
 
-            // Compare candidates based on LCC reduction, optionality, and MISS
-            cout << "Candidate: " << candidate 
-                 << ", LCC Reduction: " << lccReduction 
-                 << ", Optionality: " << candidateOptionality 
-                 << ", MISS Score: " << missScore << endl;
-
+            // Compare candidates based on LCC reduction, optionality, an
             if (lccReduction > bestLCCReduction || 
                 (lccReduction == bestLCCReduction && candidateOptionality < bestOptionality) || 
                 (lccReduction == bestLCCReduction && candidateOptionality == bestOptionality && missScore > bestMissScore)) {
@@ -292,25 +267,15 @@ vector<pair<int, int>> oisaAlgorithm(unordered_map<int, unordered_set<int>>& gra
         }
 
         if (bestNode != -1) {
-            cout << "Best Candidate: " << bestNode 
-                 << ", Best LCC Reduction: " << bestLCCReduction 
-                 << ", Best Optionality: " << bestOptionality 
-                 << ", Best MISS Score: " << bestMissScore << endl;
-
+    
             graph[targetNode].insert(bestNode);
             graph[bestNode].insert(targetNode);
             interventionEdges.emplace_back(targetNode, bestNode);
+        } 
 
-            cout << "Added Intervention Edge: (" << targetNode << ", " << bestNode << ")\n";
-        } else {
-            cout << "No valid candidate found for Target Node: " << targetNode << endl;
-        }
-
-        cout << "End of Iteration " << i + 1 << "\n\n";
     }
 
     // Final summary
-    cout << "Final Intervention Edges:\n";
     for (const auto& edge : interventionEdges) {
         cout << edge.first << " " << edge.second << endl;
     }
@@ -323,7 +288,6 @@ vector<pair<int, int>> oisaAlgorithm(unordered_map<int, unordered_set<int>>& gra
 void readInputFile(const string& filename, unordered_map<int, unordered_set<int>>& graph, vector<int>& targets, int& k, double& tau, double& omega_b, double& omega_c, double& omega_d) {
     ifstream file(filename);
     if (!file) {
-        cerr << "Error: Unable to open input file." << endl;
         exit(1);
     }
 
@@ -351,7 +315,6 @@ void readInputFile(const string& filename, unordered_map<int, unordered_set<int>
 void writeOutputFile(const string& filename, const vector<pair<int, int>>& interventionEdges, double maxLCC) {
     ofstream file(filename);
     if (!file) {
-        cerr << "Error: Unable to open output file." << endl;
         exit(1);
     }
 

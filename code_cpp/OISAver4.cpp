@@ -1,5 +1,3 @@
-// claude
-
 #include <iostream>
 #include <fstream>
 #include <vector>
@@ -11,308 +9,328 @@
 #include <iomanip>
 #include <string>
 #include <climits>
-#include <stdexcept>
 
 using namespace std;
 
-class Graph {
-private:
-    unordered_map<int, unordered_set<int>> adjacencyList;
-    
-    void validateNode(int node) const {
-        if (adjacencyList.find(node) == adjacencyList.end()) {
-            throw runtime_error("Node " + to_string(node) + " does not exist in the graph.");
+// Function to calculate Local Clustering Coefficient (LCC)
+double computeLCC(const unordered_map<int, unordered_set<int>>& graph, int node) {
+    if (graph.find(node) == graph.end()) return 0.0;
+
+    const auto& neighbors = graph.at(node);
+    int degree = neighbors.size();
+    if (degree < 2) return 0.0;
+
+    int actualEdges = 0;
+    for (auto it1 = neighbors.begin(); it1 != neighbors.end(); ++it1) {
+        for (auto it2 = next(it1); it2 != neighbors.end(); ++it2) {
+            if (graph.at(*it1).count(*it2)) actualEdges++;
         }
     }
 
-public:
-    void addEdge(int u, int v) {
-        adjacencyList[u].insert(v);
-        adjacencyList[v].insert(u);
+    int possibleEdges = degree * (degree - 1) / 2;
+    return static_cast<double>(actualEdges) / possibleEdges;
+}
+
+// Function to calculate LCC upper bound
+// Equation from 5.3 (ALC)
+// double computeLCCUpperBound(int degree, int nv, int k1, int k2) {
+//     return (nv + k2 + k1 * degree + k1 * (k1 - 1) / 2) / static_cast<double>((degree + k1) * (degree + k1 - 1) / 2);
+// }
+
+double computeLCCUpperBoundOptimized(int degree, int nv, int k) {
+    double maxUpperBound = 0.0;
+
+    for (int k1 = 0; k1 <= k; ++k1) {
+        int k2 = k - k1;
+        double upperBound = (nv + k2 + k1 * degree + k1 * (k1 - 1) / 2) / 
+                            static_cast<double>((degree + k1) * (degree + k1 - 1) / 2);
+        maxUpperBound = max(maxUpperBound, upperBound);
     }
 
-    void removeEdge(int u, int v) {
-        validateNode(u);
-        validateNode(v);
-        adjacencyList[u].erase(v);
-        adjacencyList[v].erase(u);
-    }
+    return maxUpperBound;
+}
 
-    bool hasEdge(int u, int v) const {
-        auto it = adjacencyList.find(u);
-        return it != adjacencyList.end() && it->second.count(v);
-    }
+// Example implementation for hop distance calculation
+int getHopDistance(const unordered_map<int, unordered_set<int>>& graph, int start, int end) {
+    unordered_map<int, int> dist;
+    queue<int> q;
+    q.push(start);
+    dist[start] = 0;
 
-    const unordered_set<int>& getNeighbors(int node) const {
-        auto it = adjacencyList.find(node);
-        if (it == adjacencyList.end()) {
-            throw runtime_error("Node not found");
-        }
-        return it->second;
-    }
+    while (!q.empty()) {
+        int curr = q.front();
+        q.pop();
 
-    double computeLCC(int node) const {
-        validateNode(node);
-        const auto& neighbors = adjacencyList.at(node);
-        int degree = neighbors.size();
-        if (degree < 2) return 0.0;
-
-        int actualEdges = 0;
-        for (auto it1 = neighbors.begin(); it1 != neighbors.end(); ++it1) {
-            for (auto it2 = next(it1); it2 != neighbors.end(); ++it2) {
-                if (hasEdge(*it1, *it2)) actualEdges++;
+        for (int neighbor : graph.at(curr)) {
+            if (dist.find(neighbor) == dist.end()) {
+                dist[neighbor] = dist[curr] + 1;
+                if (neighbor == end) {
+                    return dist[neighbor];
+                }
+                q.push(neighbor);
             }
         }
-
-        int possibleEdges = degree * (degree - 1) / 2;
-        return static_cast<double>(actualEdges) / possibleEdges;
     }
+    return INT_MAX; // Return a large value if no path is found
+}
 
-    double computeLCCUpperBound(int node, int k) const {
-        validateNode(node);
-        int degree = adjacencyList.at(node).size();
-        if (degree <= 1) return 0.0;
+// Function to calculate optionality for PONF
+int calculateOptionality(const unordered_map<int, unordered_set<int>>& graph, int node, double tau) {
+    int optionality = 0;
+    if (graph.find(node) == graph.end()) return optionality;
 
-        double maxUpperBound = 0.0;
-        int nv = computeLCC(node) * (degree * (degree - 1) / 2);
-
-        for (int k1 = 0; k1 <= k; ++k1) {
-            int k2 = k - k1;
-            if (degree + k1 <= 1) continue;  // Avoid division by zero
-            
-            double upperBound = (nv + k2 + k1 * degree + k1 * (k1 - 1) / 2) / 
-                               static_cast<double>((degree + k1) * (degree + k1 - 1) / 2);
-            maxUpperBound = max(maxUpperBound, upperBound);
-        }
-
-        return maxUpperBound;
-    }
-
-    // Floyd-Warshall algorithm for all-pairs shortest paths
-    vector<vector<int>> computeAllPairsShortestPaths() const {
-        vector<int> nodes;
-        for (const auto& pair : adjacencyList) {
-            nodes.push_back(pair.first);
-        }
-        sort(nodes.begin(), nodes.end());
-        
-        int n = nodes.size();
-        vector<vector<int>> dist(n, vector<int>(n, INT_MAX));
-        
-        // Initialize distances
-        for (int i = 0; i < n; i++) {
-            dist[i][i] = 0;
-            for (int neighbor : adjacencyList.at(nodes[i])) {
-                auto it = find(nodes.begin(), nodes.end(), neighbor);
-                int j = distance(nodes.begin(), it);
-                dist[i][j] = 1;
+    for (const auto& neighbor : graph.at(node)) {
+        // Check if the LCC of the neighbor is within the allowed range
+        if (computeLCC(graph, neighbor) <= tau) {
+            // Additional hop check (assume a function getHopDistance exists)
+            if (getHopDistance(graph, node, neighbor) > 2) {
+                optionality++;
             }
         }
-        
-        // Floyd-Warshall algorithm
-        for (int k = 0; k < n; k++) {
-            for (int i = 0; i < n; i++) {
-                for (int j = 0; j < n; j++) {
-                    if (dist[i][k] != INT_MAX && dist[k][j] != INT_MAX) {
-                        dist[i][j] = min(dist[i][j], dist[i][k] + dist[k][j]);
-                    }
+    }
+    return optionality;
+}
+
+
+
+// Function to calculate Betweenness Centrality (omega_b)
+double computeBetweenness(const unordered_map<int, unordered_set<int>>& graph, int node) {
+    cout << "Calculating Betweenness for node " << node << endl;
+    unordered_map<int, double> betweenness;
+    double betweennessScore = 0.0;
+
+    for (const auto& srcEntry : graph) {
+        int src = srcEntry.first;
+        if (src == node) continue;
+
+        queue<int> q;
+        unordered_map<int, int> dist;
+        unordered_map<int, int> paths;
+        unordered_map<int, double> delta;
+
+        q.push(src);
+        dist[src] = 0;
+        paths[src] = 1;
+
+        vector<int> stack;
+
+        while (!q.empty()) {
+            int curr = q.front();
+            q.pop();
+            stack.push_back(curr);
+
+            for (int neighbor : graph.at(curr)) {
+                if (dist.find(neighbor) == dist.end()) {
+                    dist[neighbor] = dist[curr] + 1;
+                    q.push(neighbor);
+                }
+                if (dist[neighbor] == dist[curr] + 1) {
+                    paths[neighbor] += paths[curr];
                 }
             }
         }
-        
-        return dist;
-    }
 
-    double computeBetweenness(int node) const {
-        validateNode(node);
-        vector<vector<int>> shortestPaths = computeAllPairsShortestPaths();
-        double betweennessScore = 0.0;
-        
-        vector<int> nodes;
-        for (const auto& pair : adjacencyList) {
-            nodes.push_back(pair.first);
-        }
-        sort(nodes.begin(), nodes.end());
-        
-        int nodeIndex = find(nodes.begin(), nodes.end(), node) - nodes.begin();
-        int n = nodes.size();
-        
-        // For each pair of nodes (s,t)
-        for (int s = 0; s < n; s++) {
-            for (int t = 0; t < n; t++) {
-                if (s == t || s == nodeIndex || t == nodeIndex) continue;
-                
-                // Count number of shortest paths between s and t
-                int totalPaths = 0;
-                int pathsThroughNode = 0;
-                
-                // BFS to count paths
-                queue<pair<int, vector<int>>> q;
-                q.push({s, {s}});
-                
-                while (!q.empty()) {
-                    auto [curr, path] = q.front();
-                    q.pop();
-                    
-                    if (curr == t) {
-                        totalPaths++;
-                        // Check if current path goes through our target node
-                        if (find(path.begin(), path.end(), nodeIndex) != path.end()) {
-                            pathsThroughNode++;
-                        }
-                        continue;
-                    }
-                    
-                    // Add neighbors that are on shortest path
-                    for (int i = 0; i < n; i++) {
-                        if (shortestPaths[curr][i] == 1 && 
-                            shortestPaths[i][t] == shortestPaths[curr][t] - 1) {
-                            vector<int> newPath = path;
-                            newPath.push_back(i);
-                            q.push({i, newPath});
-                        }
-                    }
-                }
-                
-                if (totalPaths > 0) {
-                    betweennessScore += static_cast<double>(pathsThroughNode) / totalPaths;
+        while (!stack.empty()) {
+            int curr = stack.back();
+            stack.pop_back();
+
+            for (int neighbor : graph.at(curr)) {
+                if (dist[neighbor] == dist[curr] + 1) {
+                    delta[curr] += (static_cast<double>(paths[curr]) / paths[neighbor]) * (1.0 + delta[neighbor]);
                 }
             }
-        }
-        
-        return betweennessScore;
-    }
 
-    double computeCloseness(int node) const {
-        validateNode(node);
-        vector<vector<int>> shortestPaths = computeAllPairsShortestPaths();
-        
-        int totalDistance = 0;
-        int reachableNodes = 0;
-        
-        for (const vector<int>& distances : shortestPaths) {
-            for (int dist : distances) {
-                if (dist != INT_MAX && dist > 0) {
-                    totalDistance += dist;
-                    reachableNodes++;
-                }
+            if (curr != src && curr != node) {
+                betweennessScore += delta[curr];
             }
         }
-        
-        return reachableNodes > 0 ? static_cast<double>(reachableNodes) / totalDistance : 0.0;
     }
 
-    int computeDegree(int node) const {
-        validateNode(node);
-        return adjacencyList.at(node).size();
+    cout << "Node " << node << " Betweenness: " << betweennessScore << endl;
+    return betweennessScore;
+}
+
+// Function to calculate Closeness Centrality (omega_c)
+double computeCloseness(const unordered_map<int, unordered_set<int>>& graph, int node) {
+    cout << "Calculating Closeness for node " << node << endl;
+    if (graph.find(node) == graph.end()) {
+        cerr << "Error: Node " << node << " does not exist in the graph." << endl;
+        return 0.0; // Avoid out_of_range error
     }
 
-    const unordered_map<int, unordered_set<int>>& getGraph() const {
-        return adjacencyList;
-    }
-};
+    queue<int> q;
+    unordered_map<int, int> dist;
+    int totalDistance = 0;
 
-class OISA {
-private:
-    Graph graph;
-    vector<int> targets;
-    int k;
-    double tau, omega_b, omega_c, omega_d;
-    
-    bool validateParameters() const {
-        if (omega_b + omega_c > 1.0) {
-            throw invalid_argument("omega_b + omega_c must be <= 1.0");
-        }
-        if (tau < 0.0 || tau > 1.0) {
-            throw invalid_argument("tau must be between 0.0 and 1.0");
-        }
-        if (k < 0) {
-            throw invalid_argument("k must be non-negative");
-        }
-        return true;
-    }
+    q.push(node);
+    dist[node] = 0;
 
-public:
-    OISA(const Graph& g, const vector<int>& t, int edges, double threshold, 
-         double wb, double wc, double wd) : 
-        graph(g), targets(t), k(edges), tau(threshold), 
-        omega_b(wb), omega_c(wc), omega_d(wd) {
-        validateParameters();
-    }
+    while (!q.empty()) {
+        int curr = q.front();
+        q.pop();
 
-    vector<pair<int, int>> run() {
-        vector<pair<int, int>> interventionEdges;
-        
-        for (int i = 0; i < k; i++) {
-            // Find target node with highest LCC
-            int targetNode = -1;
-            double maxLCC = -1.0;
-            
-            for (int node : targets) {
-                try {
-                    double lcc = graph.computeLCC(node);
-                    if (lcc > maxLCC) {
-                        maxLCC = lcc;
-                        targetNode = node;
-                    }
-                } catch (const runtime_error& e) {
-                    cerr << "Warning: " << e.what() << endl;
-                    continue;
-                }
-            }
-            
-            if (targetNode == -1) break;
-            
-            // Find best candidate node
-            int bestNode = -1;
-            double bestScore = -1.0;
-            
-            for (const auto& entry : graph.getGraph()) {
-                int candidate = entry.first;
-                if (candidate == targetNode || graph.hasEdge(targetNode, candidate)) {
-                    continue;
-                }
-                
-                // Calculate candidate score
-                try {
-                    double candidateScore = 
-                        (omega_b * graph.computeBetweenness(candidate)) +
-                        (omega_c * graph.computeCloseness(candidate)) +
-                        ((1 - omega_b - omega_c) * graph.computeDegree(candidate));
-                        
-                    if (candidateScore > bestScore) {
-                        bestScore = candidateScore;
-                        bestNode = candidate;
-                    }
-                } catch (const exception& e) {
-                    cerr << "Warning: Error calculating score for node " << candidate << endl;
-                    continue;
-                }
-            }
-            
-            if (bestNode != -1) {
-                graph.addEdge(targetNode, bestNode);
-                interventionEdges.emplace_back(targetNode, bestNode);
+        for (int neighbor : graph.at(curr)) {
+            if (dist.find(neighbor) == dist.end()) {
+                dist[neighbor] = dist[curr] + 1;
+                totalDistance += dist[neighbor];
+                q.push(neighbor);
             }
         }
-        
-        return interventionEdges;
     }
-};
 
-void readInputFile(const string& filename, Graph& graph, vector<int>& targets,
-                  int& k, double& tau, double& omega_b, double& omega_c, double& omega_d) {
+    if (totalDistance == 0) return 0.0;
+    double result = static_cast<double>(dist.size() - 1) / totalDistance;
+    cout << "Node " << node << " Closeness: " << result << endl;
+    return result;
+}
+
+// Function to calculate Degree (omega_d)
+int computeDegree(const unordered_map<int, unordered_set<int>>& graph, int node) {
+    cout << "Calculating Degree for node " << node << endl;
+    if (graph.find(node) == graph.end()) {
+        cerr << "Error: Node " << node << " does not exist in the graph." << endl;
+        return 0; // Avoid out_of_range error
+    }
+    int result = graph.at(node).size();
+    cout << "Node " << node << " Degree: " << result << endl;
+    return result;
+}
+
+
+// Function to implement OISA with EORE, PONF, and ALC
+vector<pair<int, int>> oisaAlgorithm(unordered_map<int, unordered_set<int>>& graph, const vector<int>& targets, int k, double tau, double omega_b, double omega_c, double omega_d) {
+    vector<pair<int, int>> interventionEdges;
+
+    // Step 1: Precompute LCC upper bounds for all nodes
+    unordered_map<int, double> lccUpperBounds;
+    for (const auto& entry : graph) {
+        int node = entry.first;
+        int degree = graph[node].size();
+        int nv = computeLCC(graph, node) * (degree * (degree - 1) / 2);
+        // lccUpperBounds[node] = computeLCCUpperBound(degree, nv, 1, k - 1);
+        lccUpperBounds[node] = computeLCCUpperBoundOptimized(degree, nv, k);
+
+    }
+
+    for (int i = 0; i < k; i++) {
+        cout << "Iteration " << i + 1 << ":\n";
+
+        int targetNode = -1;
+        double maxLCC = -1.0;
+
+        // Step 2: Find the target node with the highest LCC
+        cout << "Finding Target Node...\n";
+        for (int node : targets) {
+            if (graph.find(node) == graph.end()) continue;
+            double lcc = computeLCC(graph, node);
+            cout << "Node " << node << " LCC: " << lcc << endl;
+            if (lcc > maxLCC) {
+                maxLCC = lcc;
+                targetNode = node;
+            }
+        }
+
+        if (targetNode == -1) {
+            cout << "No valid target node found. Ending algorithm.\n";
+            break;
+        }
+
+        cout << "Target Node: " << targetNode << ", Max LCC: " << maxLCC << endl;
+
+        // Step 3: Find the best candidate node to connect to the target node
+        int bestNode = -1;
+        double bestLCCReduction = 0.0;
+        int bestOptionality = INT_MAX;
+        double bestMissScore = -1.0;
+
+        cout << "Evaluating Candidate Nodes...\n";
+        for (const auto& entry : graph) {
+            int candidate = entry.first;
+            cout << "candidate: " << candidate << endl;
+            if (candidate == targetNode || graph[targetNode].count(candidate)) continue;
+
+            // Skip if LCC upper bound indicates no significant reduction
+            if (lccUpperBounds[candidate] > tau) {
+                cout << "lccUpperBounds > tau" << endl;   
+                continue;
+            }
+            // Temporarily add the edge
+            graph[targetNode].insert(candidate);
+            graph[candidate].insert(targetNode);
+
+            double newLCC = computeLCC(graph, targetNode);
+            double lccReduction = maxLCC - newLCC;
+            int candidateOptionality = calculateOptionality(graph, candidate, tau);
+
+            double candidateBetweenness = computeBetweenness(graph, candidate);
+            double candidateCloseness = computeCloseness(graph, candidate);
+            int candidateDegree = computeDegree(graph, candidate);
+
+            // Calculate MISS based on the formula
+            double missScore = (omega_b * candidateBetweenness) + 
+                               (omega_c * candidateCloseness) + 
+                               ((1 - omega_b - omega_c) * candidateDegree);
+
+            // Remove the edge
+            graph[targetNode].erase(candidate);
+            graph[candidate].erase(targetNode);
+
+            // Compare candidates based on LCC reduction, optionality, and MISS
+            cout << "Candidate: " << candidate 
+                 << ", LCC Reduction: " << lccReduction 
+                 << ", Optionality: " << candidateOptionality 
+                 << ", MISS Score: " << missScore << endl;
+
+            if (lccReduction > bestLCCReduction || 
+                (lccReduction == bestLCCReduction && candidateOptionality < bestOptionality) || 
+                (lccReduction == bestLCCReduction && candidateOptionality == bestOptionality && missScore > bestMissScore)) {
+                bestLCCReduction = lccReduction;
+                bestNode = candidate;
+                bestOptionality = candidateOptionality;
+                bestMissScore = missScore;
+            }
+        }
+
+        if (bestNode != -1) {
+            cout << "Best Candidate: " << bestNode 
+                 << ", Best LCC Reduction: " << bestLCCReduction 
+                 << ", Best Optionality: " << bestOptionality 
+                 << ", Best MISS Score: " << bestMissScore << endl;
+
+            graph[targetNode].insert(bestNode);
+            graph[bestNode].insert(targetNode);
+            interventionEdges.emplace_back(targetNode, bestNode);
+
+            cout << "Added Intervention Edge: (" << targetNode << ", " << bestNode << ")\n";
+        } else {
+            cout << "No valid candidate found for Target Node: " << targetNode << endl;
+        }
+
+        cout << "End of Iteration " << i + 1 << "\n\n";
+    }
+
+    // Final summary
+    cout << "Final Intervention Edges:\n";
+    for (const auto& edge : interventionEdges) {
+        cout << edge.first << " " << edge.second << endl;
+    }
+
+    return interventionEdges;
+}
+
+
+// Function to read input from file
+void readInputFile(const string& filename, unordered_map<int, unordered_set<int>>& graph, vector<int>& targets, int& k, double& tau, double& omega_b, double& omega_c, double& omega_d) {
     ifstream file(filename);
     if (!file) {
-        throw runtime_error("Unable to open input file: " + filename);
+        cerr << "Error: Unable to open input file." << endl;
+        exit(1);
     }
 
-    int n, m, t;
+    int n, m;
     file >> n >> m;
-    if (file.fail()) {
-        throw runtime_error("Error reading n and m from input file");
-    }
 
+    int t;
     file >> t;
     targets.resize(t);
     for (int i = 0; i < t; ++i) {
@@ -320,58 +338,53 @@ void readInputFile(const string& filename, Graph& graph, vector<int>& targets,
     }
 
     file >> k >> tau >> omega_b >> omega_c >> omega_d;
-    if (file.fail()) {
-        throw runtime_error("Error reading parameters from input file");
-    }
 
     for (int i = 0; i < m; ++i) {
         int u, v;
         file >> u >> v;
-        if (file.fail()) {
-            throw runtime_error("Error reading edge " + to_string(i));
-        }
-        graph.addEdge(u, v);
+        graph[u].insert(v);
+        graph[v].insert(u);
     }
 }
 
-void writeOutputFile(const string& filename, const vector<pair<int, int>>& edges, double maxLCC) {
+// Function to write output to file
+void writeOutputFile(const string& filename, const vector<pair<int, int>>& interventionEdges, double maxLCC) {
     ofstream file(filename);
     if (!file) {
-        throw runtime_error("Unable to open output file: " + filename);
+        cerr << "Error: Unable to open output file." << endl;
+        exit(1);
     }
 
-    file << edges.size() << "\n";
-    for (const auto& edge : edges) {
+    file << interventionEdges.size() << "\n";
+    for (const auto& edge : interventionEdges) {
         file << edge.first << " " << edge.second << "\n";
     }
     file << fixed << setprecision(6) << maxLCC << "\n";
 }
 
 int main() {
-    try {
-        string inputFile = "../data/example/in.txt";
-        string outputFile = "../data/example/output.txt";
+    string inputFile = "../data/example/in.txt";
+    string outputFile = "../data/example/output_ver3.txt";
 
-        Graph graph;
-        vector<int> targets;
-        int k;
-        double tau, omega_b, omega_c, omega_d;
+    unordered_map<int, unordered_set<int>> graph;
+    vector<int> targets;
+    int k;
+    double tau, omega_b, omega_c, omega_d;
 
-        readInputFile(inputFile, graph, targets, k, tau, omega_b, omega_c, omega_d);
-        
-        OISA oisa(graph, targets, k, tau, omega_b, omega_c, omega_d);
-        vector<pair<int, int>> interventionEdges = oisa.run();
+    // Read input
+    readInputFile(inputFile, graph, targets, k, tau, omega_b, omega_c, omega_d);
 
-        double maxLCC = 0.0;
-        for (int node : targets) {
-            maxLCC = max(maxLCC, graph.computeLCC(node));
-        }
+    // Compute intervention edges
+    vector<pair<int, int>> interventionEdges = oisaAlgorithm(graph, targets, k, tau, omega_b, omega_c, omega_d);
 
-        writeOutputFile(outputFile, interventionEdges, maxLCC);
-        
-        return 0;
-    } catch (const exception& e) {
-        cerr << "Error: " << e.what() << endl;
-        return 1;
+    // Compute the final maximum LCC among targets
+    double maxLCC = 0.0;
+    for (int node : targets) {
+        maxLCC = max(maxLCC, computeLCC(graph, node));
     }
+
+    // Write output
+    writeOutputFile(outputFile, interventionEdges, maxLCC);
+
+    return 0;
 }
