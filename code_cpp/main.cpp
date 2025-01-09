@@ -568,9 +568,8 @@ void writeOutput(string fileName, vector<pii> interventionEdges, double maxLCC) 
 
 int main() {
 
-    string inputFileName = "../data/test/3980.txt";
-    string outputFileName = "../data/test/3980_oisa.txt";
-
+    string inputFileName = "../data/example/in3.txt";
+    string outputFileName = "../data/example/out3.txt";
     int num_nodes = 0;
     InterventionTarget target;
     vector<pii> edges;
