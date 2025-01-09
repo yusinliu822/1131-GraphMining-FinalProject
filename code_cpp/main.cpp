@@ -12,11 +12,12 @@ class InterventionTarget {
 public:
     vi targetNodes;
     int K; // number of edges to intervene
-    double TAU, OMEGA_B, OMEGA_C, OMEGA_D;
+    double TAU, OMEGA_B, OMEGA_C;
+    int OMEGA_D;
 
     InterventionTarget() {}
 
-    InterventionTarget(vi targetNodes, int K, double TAU, double OMEGA_B, double OMEGA_C, double OMEGA_D) {
+    InterventionTarget(vi targetNodes, int K, double TAU, double OMEGA_B, double OMEGA_C, int OMEGA_D) {
         this->targetNodes = targetNodes;
         this->K = K;
         this->TAU = TAU;
@@ -350,6 +351,49 @@ pair<int, double> get_target_with_max_lcc(const Graph& graph, const Intervention
     return { target_node, max_lcc };
 }
 
+int get_max_degree_of_lcc_top_2k_nodes(Graph& graph, const InterventionTarget& target) {
+    /*
+        d_2k is the maximum degree among all top-2k nodes with the largest LCCs in T.
+    */
+
+    vector<pair<double, int>> lcc_nodes;
+    for (const auto& [node, lcc] : graph.lcc_list) {
+        lcc_nodes.emplace_back(lcc, node);
+    }
+    sort(lcc_nodes.rbegin(), lcc_nodes.rend());
+
+    int d_2k = 0;
+    for (int i = 0; i < 2 * target.K; i++) {
+        d_2k = max(d_2k, graph.get_degree(lcc_nodes[i].second));
+    }
+
+    return d_2k;
+}
+
+int cal_k_t(Graph& graph, const InterventionTarget& target, int node, double l) {
+    /*
+        Lemma 1. Given a nodet of degree dG(t), to reduce LCC_G(t) to any targeted LCC l,
+        the minimum number of intervention edges k_t is the smallest number satisfying:
+        LCC_G(t) * dG(t) * (dG(t) - 1) <= l * (dG(t) + k_t) * (dG(t) + k_t - 1)
+    */
+    // printf("cal_k_t: node = %d\n", node);
+    int degree = graph.get_degree(node);
+    double lcc = get_max_lcc_of_targets(graph, target);
+    int k_t = 1;
+    double left = lcc * degree * (degree - 1);
+    // printf(" l = %f, lcc = %f, degree = %d\n", l, lcc, degree);
+    double right = l * (degree + k_t) * (degree + k_t - 1);
+    assert(right > 0);
+
+    while (left > l * (degree + k_t) * (degree + k_t - 1)) {
+        // printf("k_t = %d\n", k_t);
+        // printf("left = %f, right = %f\n", left, l * (degree + k_t) * (degree + k_t - 1));
+        k_t++;
+    }
+
+    return k_t;
+}
+
 int cal_optionality(Graph& graph, const InterventionTarget& target, int node) {
     /*
         Definition 4. Optionality.
@@ -358,15 +402,15 @@ int cal_optionality(Graph& graph, const InterventionTarget& target, int node) {
         2) ut is two-hop away from t and adding an edge (t,u_t) does not increase the LCC of any common neighbor by more than τ.
     */
     int optionality = 0;
-    for (const auto& neighbor : graph.adj_list.at(node)) {
-        int hop_distance = graph.get_hop_distance(node, neighbor);
+    for (const auto& [v, _] : graph.adj_list) {
+        int hop_distance = graph.get_hop_distance(node, v);
         if (hop_distance > 2) {
             optionality++;
         }
         else if (hop_distance == 2) {
-            graph.add_edge(node, neighbor);
+            graph.add_edge(node, v);
             optionality += check_lcc_less_than_tau(graph, target) ? 1 : 0;
-            graph.remove_edge(node, neighbor);
+            graph.remove_edge(node, v);
         }
     }
     return optionality;
@@ -396,7 +440,7 @@ vector<vector<T>> combinations(vector<T> elements, int k) {
 
 
 pair<vector<pii>, double> enumeration(const Graph& graph, const InterventionTarget& target) {
-
+    printf("Using ENUM algorithm\n");
     // choose K edges from candidateEdges
     vector<vector<pii>> edgeCombinations = combinations(graph.candidate_edges, target.K);
     double maxLCC = get_max_lcc_of_targets(graph, target);
@@ -422,41 +466,63 @@ pair<vector<pii>, double> enumeration(const Graph& graph, const InterventionTarg
 }
 
 pair<vector<pii>, double> OISA(Graph& graph, const InterventionTarget& target) {
-    vector<pii> interventionEdges;
+    printf("Using OISA algorithm\n");
+    vector<pii> globalInterventionEdges;
     double maxLCC = get_max_lcc_of_targets(graph, target);
 
-    for (int k = 0; k < target.K; k++) {
-        // Step 2: Find the target node with the highest LCC
-        auto [targetNode, maxLCC] = get_target_with_max_lcc(graph, target);
-        if (targetNode == -1) break;
+    int j = 1;
+    int d_2k = get_max_degree_of_lcc_top_2k_nodes(graph, target);
+    double l_j = 2.0 * j / (d_2k * (d_2k - 1));
+    for (; l_j < maxLCC; j++, d_2k = get_max_degree_of_lcc_top_2k_nodes(graph, target), l_j = 2.0 * j / (d_2k * (d_2k - 1))) {
+        printf("start iteration %d\n", j);
+        // double k_G = 0; // sum of max{k_t, omega_d - d_G(t)} for all t in T
+        // for (const auto& node : target.targetNodes) {
+        //     double k_t = cal_k_t(graph, target, node, l_j);
+        //     k_G += 0.5 * max(k_t, (double)target.OMEGA_D - graph.get_degree(node));
+        //     printf("k_t = %d, omega_d = %d, d_G(t) = %d\n", k_t, target.OMEGA_D, graph.get_degree(node));
+        // }
+        // printf("k_G = %d, target.K = %d\n", k_G, target.K);
+        // if (k_G < target.K) {
+        vector<pii> interventionEdges;
+        for (int k = 0; k < target.K; k++) {
+            // Step 2: Find the target node with the highest LCC
+            auto [targetNode, maxLCC] = get_target_with_max_lcc(graph, target);
+            if (targetNode == -1) break;
 
-        // Step 3: Find the best candidate node to connect to the target node
-        Node bestNode;
-        Node candidateNode;
+            // Step 3: Find the best candidate node to connect to the target node
+            Node bestNode;
+            Node candidateNode;
+            vi candidate_nodes = graph.get_candidate_nodes(targetNode);
+            for (auto& candidate : candidate_nodes) {
+                int optionality = cal_optionality(graph, target, candidate);
+                double miss_score = Score(graph, target, candidate).get_score();
+                double lcc_reduction = graph.get_lcc_reduction(targetNode, candidate);
 
-        vi candidate_nodes = graph.get_candidate_nodes(targetNode);
-        for (auto& candidate : candidate_nodes) {
+                candidateNode = Node(candidate, lcc_reduction, optionality, miss_score);
 
-            int optionality = cal_optionality(graph, target, candidate);
-            double miss_score = Score(graph, target, candidate).get_score();
-            double lcc_reduction = graph.get_lcc_reduction(targetNode, candidate);
+                if (candidateNode < bestNode) {
+                    bestNode = candidateNode;
+                }
+            }
 
-            candidateNode = Node(candidate, lcc_reduction, optionality, miss_score);
-
-            if (candidateNode < bestNode) {
-                bestNode = candidateNode;
+            if (bestNode.node != -1) {
+                graph.add_edge(targetNode, bestNode.node);
+                interventionEdges.emplace_back(targetNode, bestNode.node);
             }
         }
 
-        if (bestNode.node != -1) {
-            graph.add_edge(targetNode, bestNode.node);
-            interventionEdges.emplace_back(targetNode, bestNode.node);
+        double localMaxLCC = get_max_lcc_of_targets(graph, target);
+        printf("localMaxLCC = %f, maxLCC = %f\n", localMaxLCC, maxLCC);
+        if (localMaxLCC < maxLCC) {
+            maxLCC = localMaxLCC;
+            globalInterventionEdges = interventionEdges;
         }
+        // }
     }
 
     maxLCC = get_max_lcc_of_targets(graph, target);
 
-    return { interventionEdges, maxLCC };
+    return { globalInterventionEdges, maxLCC };
 }
 
 void readInput(string fileName, int& N, InterventionTarget& target, vector<pii>& edges) {
@@ -502,8 +568,8 @@ void writeOutput(string fileName, vector<pii> interventionEdges, double maxLCC) 
 
 int main() {
 
-    string inputFileName = "../data/example/in2.txt";
-    string outputFileName = "../data/example/out2.txt";
+    string inputFileName = "../data/test/3980.txt";
+    string outputFileName = "../data/test/3980_oisa.txt";
 
     int num_nodes = 0;
     InterventionTarget target;
@@ -511,7 +577,7 @@ int main() {
 
     readInput(inputFileName, num_nodes, target, edges);
     printf("N = %d, M = %d, T = %d, K = %d\n", num_nodes, edges.size(), target.targetNodes.size(), target.K);
-    printf("TAU = %f, OMEGA_B = %f, OMEGA_C = %f, OMEGA_D = %f\n", target.TAU, target.OMEGA_B, target.OMEGA_C, target.OMEGA_D);
+    printf("TAU = %f, OMEGA_B = %f, OMEGA_C = %f, OMEGA_D = %d\n", target.TAU, target.OMEGA_B, target.OMEGA_C, target.OMEGA_D);
 
     Graph graph(edges, num_nodes);
 
