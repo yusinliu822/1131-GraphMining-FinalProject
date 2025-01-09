@@ -37,13 +37,13 @@ public:
     vector<pii> candidate_edges;
     ADJ_MATRIX shortest_path_matrix;    // length of shortest path between nodes
 
-    unmapid betweenness_score;
-    unmapid closeness_score;
+    mutable unmapid betweenness_score;
+    mutable unmapid closeness_score;
 
     Graph(vector<pii> edges, int num_nodes) {
         for (auto& [u, v] : edges) {
-            adj_list[u].insert(v);
-            adj_list[v].insert(u);
+            adj_list.at(u).insert(v);
+            adj_list.at(v).insert(u);
         }
         if (adj_list.size() != num_nodes) {
             puts("Warning: some nodes are not connected to any other nodes");
@@ -55,8 +55,8 @@ public:
         }
 
         for (auto& [u, neighbors] : adj_list) {
-            neighbor_edge_counts[u] = count_neighbor_edges(u);
-            lcc_list[u] = cal_lcc_of_node(u);
+            neighbor_edge_counts.at(u) = count_neighbor_edges(u);
+            lcc_list.at(u) = cal_lcc_of_node(u);
         }
 
         if (USING_ALGORITHM == "ENUM") {
@@ -71,84 +71,93 @@ public:
     }
 
     void add_edge(int u, int v) {
-        adj_list[u].insert(v);
-        adj_list[v].insert(u);
+        adj_list.at(u).insert(v);
+        adj_list.at(v).insert(u);
 
         update_lcc_and_neighbor_edge_counts(u);
         update_lcc_and_neighbor_edge_counts(v);
 
         // if both u and v are neighbors of w, then update LCC(w)
-        for (auto& w : adj_list[u]) {
-            if (w != v && adj_list[v].find(w) != adj_list[v].end()) {
+        for (auto& w : adj_list.at(u)) {
+            if (w != v && adj_list.at(v).find(w) != adj_list.at(v).end()) {
                 update_lcc_and_neighbor_edge_counts(w, 1);
             }
         }
     }
 
     void remove_edge(int u, int v) {
-        adj_list[u].erase(v);
-        adj_list[v].erase(u);
+        adj_list.at(u).erase(v);
+        adj_list.at(v).erase(u);
 
         update_lcc_and_neighbor_edge_counts(u);
         update_lcc_and_neighbor_edge_counts(v);
 
         // if both u and v are neighbors of w, then update LCC(w)
-        for (auto& w : adj_list[u]) {
-            if (w != v && adj_list[v].find(w) != adj_list[v].end()) {
+        for (auto& w : adj_list.at(u)) {
+            if (w != v && adj_list.at(v).find(w) != adj_list.at(v).end()) {
                 update_lcc_and_neighbor_edge_counts(w, -1);
             }
         }
     }
 
-    int get_hop_distance(int u, int v) {
-        if (shortest_path_matrix[u].find(v) == shortest_path_matrix[u].end()) {
+    int get_hop_distance(int u, int v) const {
+        if (shortest_path_matrix.at(u).find(v) == shortest_path_matrix.at(u).end()) {
             return -1;
         }
-        return shortest_path_matrix[u][v];
+        return shortest_path_matrix.at(u).at(v);
     }
 
-    vi get_candidate_nodes(int v) {
+    vi get_candidate_nodes(int v) const {
         vi candidate_nodes;
         for (auto& [u, _] : adj_list) {
-            if (u != v && adj_list[v].find(u) == adj_list[v].end()) {
+            if (u != v && adj_list.at(v).find(u) == adj_list.at(v).end()) {
                 candidate_nodes.emplace_back(u);
             }
         }
         return candidate_nodes;
     }
 
-    double get_betweenness_score(int v) {
+    double get_betweenness_score(int v) const {
         cal_betweenness_score();
-        return betweenness_score[v];
+        return betweenness_score.at(v);
     }
 
-    double get_closeness_score(int v) {
+    double get_closeness_score(int v) const {
         cal_closeness_score(v);
-        return closeness_score[v];
+        return closeness_score.at(v);
     }
 
-    int get_degree(int v) {
-        return adj_list[v].size();
+    int get_degree(int v) const {
+        return adj_list.at(v).size();
     }
 
-    double get_lcc(int v) {
-        return lcc_list[v];
+    double get_lcc(int v) const {
+        return lcc_list.at(v);
     }
 
-    double get_lcc_reduction(int target_node, int candidate_node) {
-        double lcc_before = get_lcc(target_node);
-        add_edge(target_node, candidate_node);
-        double lcc_after = get_lcc(target_node);
-        remove_edge(target_node, candidate_node);
-        return lcc_before - lcc_after;
+    double get_lcc_reduction(int target_node, int candidate_node) const {
+        // double lcc_before = get_lcc(target_node);
+        // add_edge(target_node, candidate_node);
+        // double lcc_after = get_lcc(target_node);
+        // remove_edge(target_node, candidate_node);
+        // return lcc_before - lcc_after;
+
+        // 創建當前圖的副本
+        Graph graph_copy = *this;
+        // 在副本上模擬新增邊
+        graph_copy.add_edge(target_node, candidate_node);
+        // 計算新增邊後的 LCC
+        double lcc_after = graph_copy.get_lcc(target_node);
+        // 返回 LCC 減少的量
+        return get_lcc(target_node) - lcc_after;
     }
 
 private:
     int count_neighbor_edges(int v) {
         int count = 0;
-        for (auto u : adj_list[v]) {
-            for (auto w : adj_list[v]) {
-                if (u != w && adj_list[u].find(w) != adj_list[u].end()) { // u and w are neighbors
+        for (auto u : adj_list.at(v)) {
+            for (auto w : adj_list.at(v)) {
+                if (u != w && adj_list.at(u).find(w) != adj_list.at(u).end()) { // u and w are neighbors
                     count++;
                 }
             }
@@ -158,19 +167,19 @@ private:
     }
 
     double cal_lcc_of_node(int v) {
-        int degree = adj_list[v].size();
+        int degree = adj_list.at(v).size();
         if (degree < 2) return 0.0; // LCC is not defined for nodes with degree less than 2
-        return (double)neighbor_edge_counts[v] / (degree * (degree - 1) / 2);
+        return (double)neighbor_edge_counts.at(v) / (degree * (degree - 1) / 2);
     }
 
     void update_lcc_and_neighbor_edge_counts(int v) {
-        neighbor_edge_counts[v] = count_neighbor_edges(v);
-        lcc_list[v] = cal_lcc_of_node(v);
+        neighbor_edge_counts.at(v) = count_neighbor_edges(v);
+        lcc_list.at(v) = cal_lcc_of_node(v);
     }
 
     void update_lcc_and_neighbor_edge_counts(int v, int delta) {
-        neighbor_edge_counts[v] += delta;
-        lcc_list[v] = cal_lcc_of_node(v);
+        neighbor_edge_counts.at(v) += delta;
+        lcc_list.at(v) = cal_lcc_of_node(v);
     }
 
     // get candidate edges that can be added to the graph
@@ -185,78 +194,151 @@ private:
         return;
     }
 
-    void cal_betweenness_score() {
-        // use Brandes' algorithm to calculate betweenness score
-        // complexity: O(V * (V + E))
+    // void cal_betweenness_score() const {
+    //     // use Brandes' algorithm to calculate betweenness score
+    //     // complexity: O(V * (V + E))
 
+    //     for (auto& [u, _] : adj_list) {
+    //         betweenness_score.at(u) = 0.0;
+    //     }
+
+    //     for (auto& [s, _] : adj_list) {
+    //         stack<int> S;
+    //         unordered_map<int, vector<int>> prev;   // predecessors
+    //         unordered_map<int, int> sigma;          // number of shortest paths 
+    //         // unordered_map<int, int>& dist = shortest_path_matrix.at(s);    // distance from s
+    //         const std::unordered_map<int, int>& dist = shortest_path_matrix.at(s); // const 引用
+    //         unordered_map<int, double> delta;       // dependency of s on v
+
+    //         for (auto& [v, _] : adj_list) {
+    //             prev.at(v) = {};
+    //             sigma.at(v) = 0;
+    //             dist.at(v) = -1;
+    //             delta.at(v) = 0.0;
+    //         }
+
+    //         sigma[s] = 1;
+    //         dist[s] = 0;
+
+    //         queue<int> Q;
+    //         Q.push(s);
+
+    //         // single source shortest path
+    //         while (!Q.empty()) {
+    //             int u = Q.front();
+    //             Q.pop();
+    //             S.push(u);
+
+    //             for (auto& v : adj_list.at(u)) {
+    //                 if (dist.at(v) < 0) {
+    //                     Q.push(v);
+    //                     dist.at(v) = dist.at(u) + 1;
+    //                 }
+
+    //                 if (dist.at(v) == dist.at(u) + 1) {
+    //                     sigma.at(v) += sigma.at(u);
+    //                     prev.at(v).push_back(u);
+    //                 }
+    //             }
+    //         }
+
+    //         // back propagation of dependencies
+    //         while (!S.empty()) {
+    //             int v = S.top();
+    //             S.pop();
+
+    //             for (auto& u : prev.at(v)) {
+    //                 delta.at(u) += (sigma.at(u) / sigma.at(v)) * (1 + delta.at(v));
+
+    //                 if (u != s) {
+    //                     betweenness_score.at(u) += delta.at(u);
+    //                 }
+    //             }
+    //         }
+    //     }
+
+    //     for (auto& [u, _] : adj_list) {
+    //         betweenness_score.at(u) /= 2;  // divide by 2 because each shortest path is counted twice
+    //     }
+
+    //     return;
+    // }
+
+    void cal_betweenness_score() const {
+        // 初始化所有節點的 betweenness score 為 0
         for (auto& [u, _] : adj_list) {
             betweenness_score[u] = 0.0;
         }
 
+        // 對每個節點作為起點計算 betweenness score
         for (auto& [s, _] : adj_list) {
-            stack<int> S;
-            unordered_map<int, vector<int>> prev;   // predecessors
-            unordered_map<int, int> sigma;          // number of shortest paths 
-            unordered_map<int, int>& dist = shortest_path_matrix[s];    // distance from s
-            unordered_map<int, double> delta;       // dependency of s on v
+            // 創建本地副本來存儲距離、前驅節點、以及其他信息
+            std::unordered_map<int, std::vector<int>> predecessors; // 前驅節點
+            std::unordered_map<int, int> sigma; // 到達每個節點的最短路徑數
+            std::unordered_map<int, int> dist; // 每個節點的距離
+            std::unordered_map<int, double> delta; // 依賴度
 
+            // 初始化
             for (auto& [v, _] : adj_list) {
-                prev[v] = {};
+                predecessors[v] = {};
                 sigma[v] = 0;
-                dist[v] = -1;
+                dist[v] = -1; // 設置初始距離為 -1（表示未訪問）
                 delta[v] = 0.0;
             }
 
-            sigma[s] = 1;
-            dist[s] = 0;
+            sigma[s] = 1; // 起點到自己的路徑數為 1
+            dist[s] = 0; // 起點到自己的距離為 0
 
-            queue<int> Q;
+            // BFS 計算最短路徑數和距離
+            std::queue<int> Q;
             Q.push(s);
+            std::stack<int> S;
 
-            // single source shortest path
             while (!Q.empty()) {
                 int u = Q.front();
                 Q.pop();
-                S.push(u);
+                S.push(u); // 將訪問過的節點壓入棧
 
-                for (auto& v : adj_list[u]) {
-                    if (dist[v] < 0) {
+                for (auto& v : adj_list.at(u)) {
+                    // 發現未訪問的節點
+                    if (dist[v] == -1) {
                         Q.push(v);
-                        dist[v] = dist[u] + 1;
+                        dist[v] = dist[u] + 1; // 更新距離
                     }
 
+                    // 如果找到更短的路徑
                     if (dist[v] == dist[u] + 1) {
-                        sigma[v] += sigma[u];
-                        prev[v].push_back(u);
+                        sigma[v] += sigma[u]; // 更新到達 v 的路徑數
+                        predecessors[v].push_back(u); // 添加前驅節點
                     }
                 }
             }
 
-            // back propagation of dependencies
+            // 反向計算依賴度
             while (!S.empty()) {
                 int v = S.top();
                 S.pop();
 
-                for (auto& u : prev[v]) {
-                    delta[u] += (sigma[u] / sigma[v]) * (1 + delta[v]);
+                for (auto& u : predecessors[v]) {
+                    delta[u] += (static_cast<double>(sigma[u]) / sigma[v]) * (1 + delta[v]);
+                }
 
-                    if (u != s) {
-                        betweenness_score[u] += delta[u];
-                    }
+                // 除去起點 s，本節點的貢獻加入到 betweenness score
+                if (v != s) {
+                    betweenness_score[v] += delta[v];
                 }
             }
         }
 
-        for (auto& [u, _] : adj_list) {
-            betweenness_score[u] /= 2;  // divide by 2 because each shortest path is counted twice
+        // 將每個節點的 betweenness score 除以 2，因為每條路徑被計算了兩次
+        for (auto& [u, score] : betweenness_score) {
+            betweenness_score[u] /= 2.0;
         }
-
-        return;
     }
 
-    void cal_closeness_score(int s) {
+    void cal_closeness_score(int s) const {
         int total_distance = 0;
-        for (auto& [_, dist] : shortest_path_matrix)  total_distance += dist[s];
+        for (auto& [_, dist] : shortest_path_matrix)  total_distance += dist.at(s);
         if (total_distance == 0) {
             closeness_score[s] = 0.0;
             return;
@@ -372,6 +454,69 @@ int cal_optionality(Graph& graph, const InterventionTarget& target, int node) {
     return optionality;
 }
 
+int calculate_minimum_edges_to_reduce_lcc(const Graph& graph, const InterventionTarget& target, int node) {
+    // 當前節點的 LCC 和度數
+    double current_lcc = graph.get_lcc(node);
+    int current_degree = graph.get_degree(node);
+
+    // 如果當前度數小於 2，無法降低 LCC，返回 0
+    if (current_degree < 2) {
+        return 0;
+    }
+
+    // 設定目標 LCC
+    double target_lcc = target.TAU;
+
+    // 初始化所需的最小新增邊數
+    int kt = 0;
+
+    // 使用迴圈計算所需的最小新增邊數
+    while (true) {
+        // 計算分母與分子根據 Lemma 1 的公式
+        double numerator = current_lcc * current_degree * (current_degree - 1);
+        double denominator = (current_degree + kt) * (current_degree + kt - 1);
+
+        // 如果滿足條件，返回當前的 kt
+        if (numerator / denominator <= target_lcc) {
+            return kt;
+        }
+
+        // 否則，增加 kt 並繼續檢查
+        kt++;
+    }
+}
+
+bool check_remaining_edges(const Graph& graph, const InterventionTarget& target, int current_k, int used_edges) {
+    // 剩餘的新增邊數
+    int remaining_edges = target.K - used_edges;
+
+    // 遍歷每個目標節點，檢查剩餘邊數是否足夠
+    for (const int& node : target.targetNodes) {
+        // 計算節點的當前度數
+        int current_degree = graph.get_degree(node);
+
+        // 計算將該節點的 LCC 降低到目標 LCC 所需的最小邊數
+        int kt = calculate_minimum_edges_to_reduce_lcc(graph, target, node);
+
+        // 確保剩餘邊數至少能滿足：
+        // - kt（降低 LCC 所需邊數）
+        // - ωd - current_degree（滿足度數限制所需邊數）
+        // int required_edges = std::max(kt, target.OMEGA_D - current_degree);
+        int required_edges = std::max(kt, static_cast<int>(target.OMEGA_D - current_degree));
+
+
+        // 如果剩餘邊數不足以滿足需求，則返回 false
+        if (remaining_edges < required_edges) {
+            return false;
+        }
+    }
+
+    // 如果所有目標節點的需求都能滿足，則返回 true
+    return true;
+}
+
+
+
 // input: an vector of n elements, k elements to choose
 // output: all possible combinations of k elements from n elements
 // use template to support any type of elements
@@ -430,7 +575,13 @@ pair<vector<pii>, double> OISA(Graph& graph, const InterventionTarget& target) {
         auto [targetNode, maxLCC] = get_target_with_max_lcc(graph, target);
         if (targetNode == -1) break;
 
+        // // Step 3.1: Update the remaining edge count and check feasibility
+        // if (!check_remaining_edges(graph, target, k, interventionEdges.size())) {
+        //     cout << "!check_remaining_edges" << endl;
+        //     break; 
+        // }
         // Step 3: Find the best candidate node to connect to the target node
+        
         Node bestNode;
         Node candidateNode;
 
@@ -451,6 +602,8 @@ pair<vector<pii>, double> OISA(Graph& graph, const InterventionTarget& target) {
         if (bestNode.node != -1) {
             graph.add_edge(targetNode, bestNode.node);
             interventionEdges.emplace_back(targetNode, bestNode.node);
+
+            
         }
     }
 
@@ -503,7 +656,7 @@ void writeOutput(string fileName, vector<pii> interventionEdges, double maxLCC) 
 int main() {
 
     string inputFileName = "../data/example/in2.txt";
-    string outputFileName = "../data/example/out2.txt";
+    string outputFileName = "../data/example/out_ver6.txt";
 
     int num_nodes = 0;
     InterventionTarget target;
@@ -529,6 +682,11 @@ int main() {
     chrono::duration<double> elapsed = end - start;
     printf("Elapsed time: %f seconds\n", elapsed.count());
 
+    printf("Intervention edges: %lu\n", result.first.size());
+    for (auto edge : result.first) {
+        printf("Edge: %d - %d\n", edge.first, edge.second);
+    }
+    printf("Max LCC after intervention: %.2f\n", result.second);
 
     writeOutput(outputFileName, result.first, result.second);
 

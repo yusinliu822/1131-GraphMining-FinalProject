@@ -372,6 +372,67 @@ int cal_optionality(Graph& graph, const InterventionTarget& target, int node) {
     return optionality;
 }
 
+int calculate_minimum_edges_to_reduce_lcc(const Graph& graph, const InterventionTarget& target, int node) {
+    // 當前節點的 LCC 和度數
+    double current_lcc = graph.get_lcc(node);
+    int current_degree = graph.get_degree(node);
+
+    // 如果當前度數小於 2，無法降低 LCC，返回 0
+    if (current_degree < 2) {
+        return 0;
+    }
+
+    // 設定目標 LCC
+    double target_lcc = target.TAU;
+
+    // 初始化所需的最小新增邊數
+    int kt = 0;
+
+    // 使用迴圈計算所需的最小新增邊數
+    while (true) {
+        // 計算分母與分子根據 Lemma 1 的公式
+        double numerator = current_lcc * current_degree * (current_degree - 1);
+        double denominator = (current_degree + kt) * (current_degree + kt - 1);
+
+        // 如果滿足條件，返回當前的 kt
+        if (numerator / denominator <= target_lcc) {
+            return kt;
+        }
+
+        // 否則，增加 kt 並繼續檢查
+        kt++;
+    }
+}
+
+
+bool check_remaining_edges(const Graph& graph, const InterventionTarget& target, int current_k, int used_edges) {
+    // 剩餘的新增邊數
+    int remaining_edges = target.K - used_edges;
+
+    // 遍歷每個目標節點，檢查剩餘邊數是否足夠
+    for (const int& node : target.targetNodes) {
+        // 計算節點的當前度數
+        int current_degree = graph.get_degree(node);
+
+        // 計算將該節點的 LCC 降低到目標 LCC 所需的最小邊數
+        int kt = calculate_minimum_edges_to_reduce_lcc(graph, target, node);
+
+        // 確保剩餘邊數至少能滿足：
+        // - kt（降低 LCC 所需邊數）
+        // - ωd - current_degree（滿足度數限制所需邊數）
+        // int required_edges = std::max(kt, target.OMEGA_D - current_degree);
+        int required_edges = std::max(kt, static_cast<int>(target.OMEGA_D - current_degree));
+
+        // 如果剩餘邊數不足以滿足需求，則返回 false
+        if (remaining_edges < required_edges) {
+            return false;
+        }
+    }
+
+    // 如果所有目標節點的需求都能滿足，則返回 true
+    return true;
+}
+
 // input: an vector of n elements, k elements to choose
 // output: all possible combinations of k elements from n elements
 // use template to support any type of elements
@@ -429,6 +490,8 @@ pair<vector<pii>, double> OISA(Graph& graph, const InterventionTarget& target) {
         // Step 2: Find the target node with the highest LCC
         auto [targetNode, maxLCC] = get_target_with_max_lcc(graph, target);
         if (targetNode == -1) break;
+
+        if (!check_remaining_edges(graph, target, k, interventionEdges.size())) break;
 
         // Step 3: Find the best candidate node to connect to the target node
         Node bestNode;
